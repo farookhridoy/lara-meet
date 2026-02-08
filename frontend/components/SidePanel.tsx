@@ -176,6 +176,19 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
 
     const handleHostAction = async (action: 'mute' | 'remove', identity: string, trackSid?: string) => {
         try {
+            let finalTrackSid = trackSid;
+
+            // If muting and no trackSid provided, try to find the microphone track
+            if (action === 'mute' && !finalTrackSid) {
+                const participant = participants.find(p => p.identity === identity);
+                if (participant) {
+                    const micTrackPub = participant.getTrackPublication(Track.Source.Microphone);
+                    if (micTrackPub) {
+                        finalTrackSid = micTrackPub.trackSid;
+                    }
+                }
+            }
+
             await fetch('/api/host-action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -183,7 +196,7 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                     room: room.name,
                     identity,
                     action,
-                    trackSid
+                    trackSid: finalTrackSid
                 })
             });
         } catch (e) {
@@ -281,22 +294,56 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                                 No messages yet.
                             </div>
                         )}
-                        {allMessages.map((msg) => (
-                            <div key={msg.timestamp} className="flex flex-col gap-1">
-                                <div className="flex items-baseline gap-2">
-                                    <span className="font-semibold text-xs text-white">
-                                        {msg.from?.identity === room.localParticipant.identity ? 'You' : (msg.from?.name || msg.from?.identity || 'User')}
-                                        {msg.isPrivate && <span className="text-red-400 ml-1 italic text-[10px]">(Private)</span>}
-                                    </span>
-                                    <span className="text-[10px] text-zinc-500">
-                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
+                        {allMessages.map((msg) => {
+                            let content = msg.message;
+                            let attachment: any = null;
+                            try {
+                                if (content.startsWith('{')) {
+                                    const parsed = JSON.parse(content);
+                                    if (parsed.type === 'attachment') {
+                                        content = parsed.message;
+                                        attachment = parsed;
+                                    }
+                                }
+                            } catch (e) { }
+
+                            return (
+                                <div key={msg.timestamp} className="flex flex-col gap-1">
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="font-semibold text-xs text-white">
+                                            {msg.from?.identity === room.localParticipant.identity ? 'You' : (msg.from?.name || msg.from?.identity || 'User')}
+                                            {msg.isPrivate && <span className="text-red-400 ml-1 italic text-[10px]">(Private)</span>}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-500">
+                                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                    </div>
+                                    <div className={`p-2 rounded-lg rounded-tl-none text-sm break-words ${msg.isPrivate ? 'bg-zinc-800 border border-red-900/50 text-red-100' : 'bg-zinc-800 text-zinc-200'}`}>
+                                        {content && <div className="mb-2">{content}</div>}
+
+                                        {attachment && (
+                                            <div className="bg-zinc-900/50 border border-zinc-700/50 rounded-xl p-3 flex items-center gap-3 mt-1 group animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                                <div className="w-10 h-10 rounded-lg bg-blue-600/10 flex items-center justify-center text-blue-400 shrink-0">
+                                                    {attachment.fileType?.startsWith('image/') ? <Eye size={20} /> : <FileIcon size={20} />}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-xs font-medium text-white truncate">{attachment.name}</div>
+                                                    <div className="text-[10px] text-zinc-500">{(attachment.size / 1024).toFixed(1)} KB</div>
+                                                </div>
+                                                <a
+                                                    href={attachment.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="p-2 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                                                >
+                                                    <Download size={16} />
+                                                </a>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className={`p-2 rounded-lg rounded-tl-none text-sm break-words ${msg.isPrivate ? 'bg-zinc-800 border border-red-900/50 text-red-100' : 'bg-zinc-800 text-zinc-200'}`}>
-                                    {msg.message}
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                         <div ref={messagesEndRef} />
                     </div>
                 )}
@@ -326,21 +373,96 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                             </div>
                         )}
                         <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">In Meeting ({participants.length})</div>
-                        {participants.map((p) => (
-                            <div key={p.identity} className="flex items-center gap-3 p-2 hover:bg-zinc-800/50 rounded-lg group">
-                                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
-                                    {p.name?.[0]?.toUpperCase() || p.identity?.[0]?.toUpperCase()}
+                        {participants.map((p) => {
+                            const pMeta = p.metadata ? JSON.parse(p.metadata) : {};
+                            const isPHost = pMeta.is_host;
+                            const isPCoHost = pMeta.is_cohost;
+
+                            return (
+                                <div key={p.identity} className="flex items-center gap-3 p-2 hover:bg-zinc-800/50 rounded-lg group transition-colors">
+                                    <div className="relative shrink-0">
+                                        <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center text-xs font-bold border border-blue-500/20">
+                                            {p.name?.[0]?.toUpperCase() || p.identity?.[0]?.toUpperCase()}
+                                        </div>
+                                        {p.isLocal && <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-zinc-900 rounded-full" title="You" />}
+                                    </div>
+
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className="text-sm text-white truncate font-medium">
+                                                {p.name || p.identity} {p.isLocal && '(You)'}
+                                            </span>
+                                            {isPHost && <Shield size={12} className="text-blue-400 fill-blue-400/20 shrink-0" />}
+                                            {isPCoHost && <ShieldCheck size={12} className="text-zinc-400 fill-zinc-400/20 shrink-0" />}
+                                            {!p.isMicrophoneEnabled && <MicOff size={12} className="text-red-500 shrink-0" />}
+                                        </div>
+                                        <div className="text-[10px] text-zinc-500 flex items-center gap-1">
+                                            {p.isSpeaking ? (
+                                                <span className="text-green-500 flex items-center gap-0.5"><Mic size={8} /> Speaking</span>
+                                            ) : (
+                                                <span>{p.isMicrophoneEnabled ? 'Active' : 'Muted'}</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-1">
+                                        {!p.isLocal && (
+                                            <button
+                                                onClick={() => {
+                                                    setRecipientId(p.identity);
+                                                    onTabChange?.('chat');
+                                                }}
+                                                className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-600/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                title="Send private message"
+                                            >
+                                                <Send size={14} />
+                                            </button>
+                                        )}
+
+                                        {!p.isLocal && isLocalAdmin && (
+                                            <DropdownMenu.Root>
+                                                <DropdownMenu.Trigger asChild>
+                                                    <button className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-700 rounded-lg transition-all outline-none">
+                                                        <MoreVertical size={16} />
+                                                    </button>
+                                                </DropdownMenu.Trigger>
+                                                <DropdownMenu.Portal>
+                                                    <DropdownMenu.Content className="min-w-[180px] bg-zinc-800 rounded-xl shadow-2xl border border-zinc-700 p-1.5 z-[110] animate-in fade-in zoom-in-95 duration-100" align="end" sideOffset={5}>
+                                                        <DropdownMenu.Item className="text-white text-xs flex items-center gap-2 px-3 py-2 hover:bg-zinc-700 rounded-lg cursor-pointer outline-none transition-colors" onClick={() => askToUnmute(p.identity)}>
+                                                            <Mic size={14} className="text-zinc-400" />
+                                                            Ask to unmute
+                                                        </DropdownMenu.Item>
+                                                        <DropdownMenu.Item className="text-red-400 text-xs flex items-center gap-2 px-3 py-2 hover:bg-red-500/10 rounded-lg cursor-pointer outline-none transition-colors" onClick={() => handleHostAction('mute', p.identity)}>
+                                                            <MicOff size={14} />
+                                                            Mute participant
+                                                        </DropdownMenu.Item>
+
+                                                        {localMeta.is_host && (
+                                                            <>
+                                                                <DropdownMenu.Separator className="h-px bg-zinc-700 my-1" />
+                                                                <DropdownMenu.Item
+                                                                    className="text-white text-xs flex items-center gap-2 px-3 py-2 hover:bg-zinc-700 rounded-lg cursor-pointer outline-none transition-colors"
+                                                                    onClick={() => handleCoHostAction(p.identity, !isPCoHost)}
+                                                                >
+                                                                    <ShieldCheck size={14} className={isPCoHost ? "text-red-400" : "text-blue-400"} />
+                                                                    {isPCoHost ? 'Remove Co-host' : 'Make Co-host'}
+                                                                </DropdownMenu.Item>
+                                                            </>
+                                                        )}
+
+                                                        <DropdownMenu.Separator className="h-px bg-zinc-700 my-1" />
+                                                        <DropdownMenu.Item className="text-red-500 text-xs flex items-center gap-2 px-3 py-2 hover:bg-red-500/10 rounded-lg cursor-pointer outline-none transition-colors font-semibold" onClick={() => handleHostAction('remove', p.identity)}>
+                                                            <Trash2 size={14} />
+                                                            Remove from call
+                                                        </DropdownMenu.Item>
+                                                    </DropdownMenu.Content>
+                                                </DropdownMenu.Portal>
+                                            </DropdownMenu.Root>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="flex-1 text-sm text-white truncate font-medium">
-                                    {p.name || p.identity} {p.isLocal && '(You)'}
-                                </div>
-                                {!p.isLocal && isLocalAdmin && (
-                                    <button onClick={() => askToUnmute(p.identity)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-zinc-700 rounded-full transition-all">
-                                        <Mic size={14} className="text-zinc-400" />
-                                    </button>
-                                )}
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
 
@@ -358,18 +480,39 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
 
             {activeTab === 'chat' && (
                 <div className="p-4 border-t border-zinc-800">
-                    <div className="relative">
+                    <div className="flex items-center gap-2 mb-3">
                         <input
-                            type="text"
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && onSend()}
-                            placeholder="Send a message"
-                            className="w-full bg-zinc-800 border-none rounded-full py-2.5 px-4 pr-12 text-sm text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            className="hidden"
                         />
-                        <button onClick={() => onSend()} className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-blue-400 hover:text-blue-300">
-                            <Send size={18} />
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
+                            className={`p-2 rounded-lg transition-colors ${isUploading ? 'bg-zinc-800 text-zinc-500' : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'}`}
+                            title="Attach file"
+                        >
+                            {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
                         </button>
+                        <div className="relative flex-1">
+                            <input
+                                type="text"
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && onSend()}
+                                placeholder={isUploading ? "Uploading file..." : "Send a message"}
+                                disabled={isUploading}
+                                className="w-full bg-zinc-800 border-none rounded-full py-2.5 px-4 pr-12 text-sm text-white focus:ring-2 focus:ring-blue-600 focus:outline-none disabled:opacity-50"
+                            />
+                            <button
+                                onClick={() => onSend()}
+                                disabled={isUploading || (!message.trim())}
+                                className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-blue-400 hover:text-blue-300 disabled:text-zinc-600 transition-colors"
+                            >
+                                <Send size={18} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

@@ -26,7 +26,8 @@ import {
     Info,
     Copy,
     CheckCircle,
-    Shield
+    Shield,
+    CircleDot
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -54,6 +55,7 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
     const [isHost, setIsHost] = useState(false);
     const [isCoHost, setIsCoHost] = useState(false);
     const [screenShareLocked, setScreenShareLocked] = useState(false);
+    const [recordingLocked, setRecordingLocked] = useState(true);
     const { isRecording, recordingTime, startRecording, stopRecording } = useLocalRecording();
     const { chatMessages } = useChat();
     const [mounted, setMounted] = useState(false);
@@ -84,6 +86,7 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
                 try {
                     const data = JSON.parse(meta);
                     setScreenShareLocked(!!data.screenShareLocked);
+                    setRecordingLocked(data.recordingLocked !== undefined ? !!data.recordingLocked : true);
                 } catch { }
             }
         };
@@ -97,12 +100,27 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
     const toggleScreenShareLock = async () => {
         if (!isLocalAdmin) return;
         const newState = !screenShareLocked;
+        const currentMeta = room.metadata ? JSON.parse(room.metadata) : {};
+        const payload = JSON.stringify({ ...currentMeta, screenShareLocked: newState });
         const encoder = new TextEncoder();
-        await localParticipant.publishData(encoder.encode(JSON.stringify({ locked: newState })), {
+        await localParticipant.publishData(encoder.encode(payload), {
             reliable: true,
-            topic: 'screen_share_lock'
+            topic: 'room_metadata_update'
         });
         setScreenShareLocked(newState);
+    };
+
+    const toggleRecordingLock = async () => {
+        if (!isLocalAdmin) return;
+        const newState = !recordingLocked;
+        const currentMeta = room.metadata ? JSON.parse(room.metadata) : {};
+        const payload = JSON.stringify({ ...currentMeta, recordingLocked: newState });
+        const encoder = new TextEncoder();
+        await localParticipant.publishData(encoder.encode(payload), {
+            reliable: true,
+            topic: 'room_metadata_update'
+        });
+        setRecordingLocked(newState);
     };
 
     const toggleHandRaise = async () => {
@@ -111,6 +129,15 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
         await localParticipant.setMetadata(JSON.stringify({ ...currentMeta, handRaised: newHandState }));
         setIsHandRaised(newHandState);
     };
+
+    useEffect(() => {
+        // SECURITY GUARD: If screen share is locked and I'm not an admin anymore (demoted)
+        // AND I am currently sharing -> STOP sharing immediately.
+        if (screenShareLocked && !isLocalAdmin && isScreenShareEnabled) {
+            localParticipant.setScreenShareEnabled(false);
+            alert("Administrative Action: Your screen sharing has been disabled by the host.");
+        }
+    }, [screenShareLocked, isLocalAdmin, isScreenShareEnabled, localParticipant]);
 
     const toggleFullScreen = () => {
         if (!document.fullscreenElement) {
@@ -129,6 +156,16 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
                     setUnreadCount(prev => prev + 1);
                     setIsRinging(true);
                     setTimeout(() => setIsRinging(false), 1000);
+                }
+            }
+
+            if (topic === 'room_metadata_update') {
+                try {
+                    const data = JSON.parse(new TextDecoder().decode(payload));
+                    if (data.screenShareLocked !== undefined) setScreenShareLocked(data.screenShareLocked);
+                    if (data.recordingLocked !== undefined) setRecordingLocked(data.recordingLocked);
+                } catch (e) {
+                    console.error("Failed to parse room metadata update:", e);
                 }
             }
         };
@@ -159,6 +196,7 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
     };
 
     const exportMeetingSummary = async () => {
+        if (!isHost) return;
         const notes = localStorage.getItem('meeting_notes') || 'No notes taken.';
         const chat = chatMessages.map(m => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.from?.name || 'User'}: ${m.message}`).join('\n');
 
@@ -313,9 +351,15 @@ ${chat}
 
                 {/* Local Record */}
                 <button
-                    className={`${buttonBase} ${isRecording ? 'bg-red-600 animate-pulse' : buttonActive} hidden sm:flex items-center gap-2 !w-max px-4`}
-                    onClick={isRecording ? stopRecording : startRecording}
-                    title={isRecording ? "Stop recording" : "Record locally (Free)"}
+                    className={`${buttonBase} ${isRecording ? 'bg-red-600 animate-pulse' : (recordingLocked && !isLocalAdmin ? 'bg-zinc-800 opacity-50 cursor-not-allowed' : buttonActive)} hidden sm:flex items-center gap-2 !w-max px-4`}
+                    onClick={() => {
+                        if (recordingLocked && !isLocalAdmin) {
+                            alert("Recording is restricted to hosts.");
+                            return;
+                        }
+                        isRecording ? stopRecording() : startRecording();
+                    }}
+                    title={isRecording ? "Stop recording" : (recordingLocked && !isLocalAdmin ? "Recording locked by host" : "Record locally (Free)")}
                 >
                     <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-white' : 'bg-red-500'}`} />
                     <span className="text-xs font-bold uppercase tracking-tighter">
@@ -397,6 +441,22 @@ ${chat}
                                         </div>
                                         <div className={`w-8 h-4 rounded-full transition-colors relative ${screenShareLocked ? 'bg-red-500' : 'bg-zinc-600'}`}>
                                             <div className={`absolute top-1 w-2 h-2 rounded-full bg-white transition-all ${screenShareLocked ? 'right-1' : 'left-1'}`} />
+                                        </div>
+                                    </DropdownMenu.Item>
+
+                                    <DropdownMenu.Item
+                                        className="flex items-center justify-between p-3 hover:bg-zinc-700 rounded-lg text-white text-sm cursor-pointer outline-none transition-colors"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            toggleRecordingLock();
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <CircleDot size={18} className={recordingLocked ? 'text-red-400' : 'text-zinc-400'} />
+                                            <span>Guest recording {recordingLocked ? 'locked' : 'allowed'}</span>
+                                        </div>
+                                        <div className={`w-8 h-4 rounded-full transition-colors relative ${recordingLocked ? 'bg-red-500' : 'bg-zinc-600'}`}>
+                                            <div className={`absolute top-1 w-2 h-2 rounded-full bg-white transition-all ${recordingLocked ? 'right-1' : 'left-1'}`} />
                                         </div>
                                     </DropdownMenu.Item>
                                 </>

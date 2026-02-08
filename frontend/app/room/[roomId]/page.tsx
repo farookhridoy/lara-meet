@@ -155,6 +155,17 @@ function RoomEventsHandler({ isWaiting, setIsWaiting, setWaitingMessage }: { isW
     const { localParticipant } = useLocalParticipant();
 
     useEffect(() => {
+        // Automatically set host metadata if the URL indicates we are the host
+        const isHost = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('host') === 'true';
+        if (isHost && room.state === 'connected') {
+            const currentMeta = localParticipant.metadata ? JSON.parse(localParticipant.metadata) : {};
+            if (!currentMeta.is_host) {
+                localParticipant.setMetadata(JSON.stringify({ ...currentMeta, is_host: true }));
+            }
+        }
+    }, [room.state, localParticipant]);
+
+    useEffect(() => {
         const sendJoinRequest = async () => {
             if (room.state !== 'connected' || !isWaiting) return;
 
@@ -218,6 +229,15 @@ function RoomEventsHandler({ isWaiting, setIsWaiting, setWaitingMessage }: { isW
                 } else if (data.status === 'hold') {
                     setWaitingMessage(data.message || "The host has put you on hold. Please be patient...");
                 }
+            }
+
+            if (topic === 'ask_unmute') {
+                // Play notification sound
+                const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
+                audio.play().catch(e => console.log("Audio play blocked by browser:", e));
+
+                // Show visual alert
+                alert("The host would like you to unmute your microphone.");
             }
         };
 
