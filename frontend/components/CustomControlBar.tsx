@@ -7,7 +7,7 @@ import {
     TrackToggle,
     DisconnectButton,
 } from '@livekit/components-react';
-import { Track } from 'livekit-client';
+import { Track, RoomEvent } from 'livekit-client';
 import {
     Mic, MicOff,
     Video, VideoOff,
@@ -19,25 +19,34 @@ import {
     Hand,
     LayoutGrid,
     Maximize,
+    StickyNote,
     Settings
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import SettingsModal from './SettingsModal';
+import { useLocalRecording } from '@/hooks/useLocalRecording';
+import { useChat } from '@livekit/components-react';
 
 interface CustomControlBarProps {
     onToggleChat: () => void;
     onToggleUsers: () => void;
-    activeTab: 'chat' | 'participants' | null;
+    onToggleNotes: () => void;
+    activeTab: 'chat' | 'participants' | 'notes' | null;
 }
 
-export default function CustomControlBar({ onToggleChat, onToggleUsers, activeTab }: CustomControlBarProps) {
+export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggleNotes, activeTab }: CustomControlBarProps) {
     const { localParticipant, isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } = useLocalParticipant();
     const [showMore, setShowMore] = useState(false);
 
     const [time, setTime] = useState('');
     const [isHandRaised, setIsHandRaised] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [isRinging, setIsRinging] = useState(false);
+    const { isRecording, recordingTime, startRecording, stopRecording } = useLocalRecording();
+    const { chatMessages } = useChat();
+    const room = useRoomContext();
 
     useEffect(() => {
         if (localParticipant.metadata) {
@@ -66,6 +75,27 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, activeTa
     };
 
     useEffect(() => {
+        const handleData = (payload: Uint8Array, participant: any, kind: any, topic?: string) => {
+            if (topic === 'chat' || topic === 'lk-chat-topic' || topic === 'private_chat') {
+                if (activeTab !== 'chat') {
+                    setUnreadCount(prev => prev + 1);
+                    setIsRinging(true);
+                    setTimeout(() => setIsRinging(false), 1000);
+                }
+            }
+        };
+
+        room.on(RoomEvent.DataReceived, handleData);
+        return () => { room.off(RoomEvent.DataReceived, handleData); };
+    }, [room, activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'chat') {
+            setUnreadCount(0);
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
         const updateTime = () => {
             setTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         };
@@ -73,6 +103,41 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, activeTa
         const interval = setInterval(updateTime, 60000);
         return () => clearInterval(interval);
     }, []);
+
+    const formatTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const exportMeetingSummary = () => {
+        const notes = localStorage.getItem('meeting_notes') || 'No notes taken.';
+        const chat = chatMessages.map(m => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.from?.name || 'User'}: ${m.message}`).join('\n');
+
+        const summary = `
+MEETING SUMMARY
+Room: ${room.name}
+Date: ${new Date().toLocaleDateString()}
+-----------------------------------
+
+NOTES:
+${notes}
+
+-----------------------------------
+CHAT HISTORY:
+${chat}
+        `;
+
+        const blob = new Blob([summary], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `meeting-summary-${room.name}.txt`;
+        a.click();
+
+        // Cleanup as requested
+        localStorage.removeItem('meeting_notes');
+    };
 
     // Common button styles
     const buttonBase = "p-3 rounded-full text-white transition-all duration-200 flex items-center justify-center h-12 w-12";
@@ -128,6 +193,18 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, activeTa
                     onClick={toggleHandRaise}
                 >
                     <Hand size={20} />
+                </button>
+
+                {/* Local Record */}
+                <button
+                    className={`${buttonBase} ${isRecording ? 'bg-red-600 animate-pulse' : buttonActive} hidden sm:flex items-center gap-2 !w-max px-4`}
+                    onClick={isRecording ? stopRecording : startRecording}
+                    title={isRecording ? "Stop recording" : "Record locally (Free)"}
+                >
+                    <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-white' : 'bg-red-500'}`} />
+                    <span className="text-xs font-bold uppercase tracking-tighter">
+                        {isRecording ? formatTime(recordingTime) : 'REC'}
+                    </span>
                 </button>
 
                 {/* Screen Share */}
@@ -186,6 +263,9 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, activeTa
 
                 {/* End Call */}
                 <DisconnectButton
+                    onClick={() => {
+                        exportMeetingSummary();
+                    }}
                 >
                     <div className="bg-red-600 hover:bg-red-700 text-white rounded-full w-16 h-10 flex items-center justify-center ml-2 transition-colors shadow-lg">
                         <PhoneOff size={20} fill="currentColor" />
@@ -197,11 +277,25 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, activeTa
             {/* Right: Side Actions */}
             <div className="hidden md:flex items-center gap-3 justify-end min-w-[200px]">
                 <button
-                    className={`p-3 transition-colors ${activeTab === 'chat' ? 'text-blue-400' : 'text-zinc-400 hover:text-white'}`}
+                    className={`p-3 transition-colors ${activeTab === 'notes' ? 'text-blue-400' : 'text-zinc-400 hover:text-white'}`}
+                    title="Notes"
+                    onClick={onToggleNotes}
+                >
+                    <StickyNote size={20} />
+                </button>
+                <button
+                    className={`p-3 transition-colors relative group/chat ${activeTab === 'chat' ? 'text-blue-400' : 'text-zinc-400 hover:text-white'}`}
                     title="Chat"
                     onClick={onToggleChat}
                 >
-                    <MessageSquare size={20} />
+                    <div className={isRinging ? 'animate-ring' : ''}>
+                        <MessageSquare size={20} />
+                    </div>
+                    {unreadCount > 0 && (
+                        <span className="absolute top-1.5 right-1.5 bg-red-500 text-white text-[10px] font-bold h-4 w-4 rounded-full flex items-center justify-center border-2 border-zinc-900 animate-in zoom-in duration-200">
+                            {unreadCount}
+                        </span>
+                    )}
                 </button>
                 <button
                     className={`p-3 transition-colors ${activeTab === 'participants' ? 'text-blue-400' : 'text-zinc-400 hover:text-white'}`}

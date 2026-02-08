@@ -15,7 +15,7 @@ export default function RoomPage() {
     const [token, setToken] = useState<string>('');
     const [username, setUsername] = useState<string>('');
     const [isPreJoin, setIsPreJoin] = useState(true);
-    const [sidePanelTab, setSidePanelTab] = useState<'chat' | 'participants' | null>(null);
+    const [sidePanelTab, setSidePanelTab] = useState<'chat' | 'participants' | 'notes' | null>(null);
 
     const joinRoom = async () => {
         if (!username) return;
@@ -87,6 +87,7 @@ export default function RoomPage() {
             <CustomControlBar
                 onToggleChat={() => setSidePanelTab(prev => prev === 'chat' ? null : 'chat')}
                 onToggleUsers={() => setSidePanelTab(prev => prev === 'participants' ? null : 'participants')}
+                onToggleNotes={() => setSidePanelTab(prev => prev === 'notes' ? null : 'notes')}
                 activeTab={sidePanelTab}
             />
             <RoomEventsHandler />

@@ -2,15 +2,15 @@
 'use client';
 
 import { useChat, useParticipants, useRoomContext } from '@livekit/components-react';
-import { X, Send, User, MicOff, Trash2, MoreVertical, Hand, Mic, ChevronDown, Check } from 'lucide-react';
+import { X, Send, User, MicOff, Trash2, MoreVertical, Hand, Mic, ChevronDown, Check, Paperclip, File as FileIcon, Download, Eye, Loader2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { RemoteParticipant, Track } from 'livekit-client';
 
 interface SidePanelProps {
-    activeTab: 'chat' | 'participants' | null;
+    activeTab: 'chat' | 'participants' | 'notes' | null;
     onClose: () => void;
-    onTabChange?: (tab: 'chat' | 'participants') => void;
+    onTabChange?: (tab: 'chat' | 'participants' | 'notes') => void;
 }
 
 export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanelProps) {
@@ -18,6 +18,9 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
     const participants = useParticipants();
     const [message, setMessage] = useState('');
     const [recipientId, setRecipientId] = useState<string | null>(null); // null = Everyone
+    const [isUploading, setIsUploading] = useState(false);
+    const [notes, setNotes] = useState('');
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const room = useRoomContext();
 
@@ -28,26 +31,19 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
         }
     }, [chatMessages, activeTab]);
 
-    const onSend = async () => {
-        if (message.trim()) {
-            if (recipientId) {
-                // Determine destination identity
-                // Assuming identity is sufficient. LiveKit useChat send options has destinationIdentities
-                await send(message); // Note: useChat's send doesn't expose destination directly in current hook version often, let's check
-                // For now, if useChat send(msg) doesn't take options, we fallback to DataPacket or just label it.
-                // Actually the standard useChat hook send function usually is (message: string) => Promise<ChatMessage>.
-                // If that's the case, we might need a custom send or publish data.
-                // Let's assume we use standard chat but if we want PRIVATE it's tricky with just useChat hook unless we filter.
-                // Better approach: Use localParticipant.publishData for private chat if the hook doesn't support it, 
-                // BUT to integrate with 'chatMessages' list is hard.
-                // Let's try to pass payload if possible or standard text. 
-                // If useChat doesn't support private, we simulate it or use data channel.
-                // Let's assume for this task we use DataChannel for private messages or try to stick to public but labeled? No, user asked for private.
-                // Let's use room.localParticipant.publishData and client-side filtering? 
-                // Actually, let's use the 'send' from useChat but we might not be able to direct it.
-                // Use room.localParticipant.publishData for private messages.
+    const onSend = async (customMessage?: string, attachment?: any) => {
+        const textToSend = customMessage || message;
+        if (textToSend.trim() || attachment) {
+            const msgData = attachment
+                ? JSON.stringify({ type: 'attachment', ...attachment, message: textToSend })
+                : textToSend;
 
-                const payload = JSON.stringify({ message, timestamp: Date.now(), isPrivate: true });
+            if (recipientId) {
+                const payload = JSON.stringify({
+                    message: msgData,
+                    timestamp: Date.now(),
+                    isPrivate: true
+                });
                 const encoder = new TextEncoder();
                 await room.localParticipant.publishData(encoder.encode(payload), {
                     reliable: true,
@@ -55,17 +51,49 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                     topic: 'private_chat'
                 });
 
-                // Add to local view
                 setPrivateMessages(prev => [...prev, {
-                    message,
+                    message: msgData,
                     timestamp: Date.now(),
                     from: room.localParticipant,
                     isPrivate: true
                 }]);
             } else {
-                await send(message);
+                await send(msgData);
             }
-            setMessage('');
+            if (!attachment) setMessage('');
+        }
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const resp = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await resp.json();
+            if (data.success) {
+                await onSend('', {
+                    name: data.name,
+                    url: data.url,
+                    size: data.size,
+                    fileType: data.type
+                });
+            } else {
+                alert('Upload failed: ' + data.error);
+            }
+        } catch (error) {
+            console.error('Upload error:', error);
+            alert('File upload failed.');
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
@@ -152,7 +180,7 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-zinc-800">
                 <h3 className="text-white font-medium text-lg capitalize">
-                    {activeTab === 'chat' ? 'In-call messages' : 'People'}
+                    {activeTab === 'chat' ? 'In-call messages' : activeTab === 'notes' ? 'My Notes' : 'People'}
                 </h3>
                 <button onClick={onClose} className="text-zinc-400 hover:text-white p-1 rounded-full hover:bg-zinc-800 transition-colors">
                     <X size={20} />
@@ -226,26 +254,76 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                                 No messages yet. <br /> Messages can only be seen by people in the call.
                             </div>
                         )}
-                        {allMessages.map((msg) => (
-                            <div key={msg.timestamp} className="flex flex-col gap-1">
-                                <div className="flex items-baseline gap-2">
-                                    <span className="font-semibold text-xs text-white">
-                                        {msg.from?.identity === room.localParticipant.identity ? 'You' : (msg.from?.name || msg.from?.identity || 'UserId')}
-                                        {/* @ts-ignore */}
-                                        {msg.isPrivate && <span className="text-red-400 ml-1 italic">(Private)</span>}
-                                    </span>
-                                    <span className="text-[10px] text-zinc-500">
-                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
+                        {allMessages.map((msg) => {
+                            let content = msg.message;
+                            let isAttachment = false;
+                            let attachmentData: any = null;
+
+                            try {
+                                if (content.startsWith('{')) {
+                                    const parsed = JSON.parse(content);
+                                    if (parsed.type === 'attachment') {
+                                        isAttachment = true;
+                                        attachmentData = parsed;
+                                        content = parsed.message;
+                                    }
+                                }
+                            } catch (e) {
+                                // Not a JSON, treat as plain text
+                            }
+
+                            return (
+                                <div key={msg.timestamp} className="flex flex-col gap-1">
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="font-semibold text-xs text-white">
+                                            {msg.from?.identity === room.localParticipant.identity ? 'You' : (msg.from?.name || msg.from?.identity || 'UserId')}
+                                            {/* @ts-ignore */}
+                                            {msg.isPrivate && <span className="text-red-400 ml-1 italic text-[10px]">(Private)</span>}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-500">
+                                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                    </div>
+                                    <div className={`p-2 rounded-lg rounded-tl-none text-sm break-words flex flex-col gap-2 ${
+                                        /* @ts-ignore */
+                                        msg.isPrivate ? 'bg-zinc-800 border border-red-900/50 text-red-100' : 'bg-zinc-800 text-zinc-200'
+                                        }`}>
+                                        {content && <div>{content}</div>}
+
+                                        {isAttachment && (
+                                            <div className="flex items-center gap-3 p-3 bg-zinc-900/50 rounded-xl border border-zinc-700/50 group/file">
+                                                <div className="p-2 bg-blue-600/20 rounded-lg text-blue-400">
+                                                    <FileIcon size={20} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-medium text-white truncate">{attachmentData.name}</div>
+                                                    <div className="text-[10px] text-zinc-500">{(attachmentData.size / 1024).toFixed(1)} KB</div>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <a
+                                                        href={attachmentData.url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md transition-all"
+                                                        title="View"
+                                                    >
+                                                        <Eye size={16} />
+                                                    </a>
+                                                    <a
+                                                        href={attachmentData.url}
+                                                        download={attachmentData.name}
+                                                        className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md transition-all"
+                                                        title="Download"
+                                                    >
+                                                        <Download size={16} />
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className={`p-2 rounded-lg rounded-tl-none text-sm break-words ${
-                                    /* @ts-ignore */
-                                    msg.isPrivate ? 'bg-zinc-800 border border-red-900/50 text-red-100' : 'bg-zinc-800 text-zinc-200'
-                                    }`}>
-                                    {msg.message}
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                         <div ref={messagesEndRef} />
                     </div>
                 )}
@@ -342,27 +420,61 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                         ))}
                     </div>
                 )}
+                {/* Notes Tab */}
+                {activeTab === 'notes' && (
+                    <div className="flex flex-col h-full gap-4">
+                        <p className="text-xs text-zinc-500 italic">
+                            These notes are private to you and will be available for download when you leave.
+                        </p>
+                        <textarea
+                            value={notes}
+                            onChange={(e) => {
+                                setNotes(e.target.value);
+                                localStorage.setItem('meeting_notes', e.target.value);
+                            }}
+                            placeholder="Start typing your notes here..."
+                            className="flex-1 bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4 text-sm text-zinc-200 focus:ring-2 focus:ring-blue-600 focus:outline-none resize-none min-h-[300px] custom-scrollbar"
+                        />
+                    </div>
+                )}
             </div>
 
             {/* Chat Input (Only for Chat Tab) */}
             {activeTab === 'chat' && (
                 <div className="p-4 border-t border-zinc-800 bg-zinc-900 rounded-b-2xl">
-                    <div className="relative">
-                        <input
-                            type="text"
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && onSend()}
-                            placeholder={recipientId ? "Send private message..." : "Send a message"}
-                            className="w-full bg-zinc-800 border-none rounded-full py-3 px-4 pr-12 text-sm text-white focus:ring-2 focus:ring-blue-600 focus:outline-none placeholder-zinc-500"
-                        />
+                    <div className="flex items-center gap-2">
                         <button
-                            onClick={onSend}
-                            disabled={!message.trim()}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-blue-400 hover:text-blue-300 disabled:text-zinc-600 disabled:cursor-not-allowed transition-colors"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
+                            className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors flex-shrink-0"
                         >
-                            <Send size={18} />
+                            {isUploading ? <Loader2 size={20} className="animate-spin text-blue-400" /> : <Paperclip size={20} />}
                         </button>
+
+                        <input
+                            type="file"
+                            className="hidden"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                        />
+
+                        <div className="relative flex-1">
+                            <input
+                                type="text"
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && onSend()}
+                                placeholder={recipientId ? "Send private message..." : "Send a message"}
+                                className="w-full bg-zinc-800 border-none rounded-full py-2.5 px-4 pr-12 text-sm text-white focus:ring-2 focus:ring-blue-600 focus:outline-none placeholder-zinc-500"
+                            />
+                            <button
+                                onClick={() => onSend()}
+                                disabled={!message.trim() && !isUploading}
+                                className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-blue-400 hover:text-blue-300 disabled:text-zinc-600 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <Send size={18} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
