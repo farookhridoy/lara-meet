@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+  --lk-bg: #202124;
+  --lk-fg: #ffffff;
+}
+
+body {
+  background: var(--lk-bg);
+  color: var(--lk-fg);
+  margin: 0;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  overflow: hidden;
+}
+
+/* Hide default LiveKit Control Bar since we use CustomControlBar */
+.lk-control-bar {
+  display: none !important;
+}
+
+/* Adjust Video Conference Layout */
+.lk-video-conference {
+  background-color: var(--lk-bg) !important;
+  height: 100dvh !important;
+}
+
+/* 
+   Mobile/Narrow screens: Overlay 
+   Wide screens: Resize is hard to coordinate without a parent layout component. 
+   For now, floating panel (overlay) is the standard behavior I implemented in SidePanel.tsx (fixed position).
+   So we just need to ensure z-index is correct.
+*/
+
+.lk-grid-layout {
+  padding-bottom: 90px !important;
+  /* Space for custom bottom bar */
+}
+
+.lk-focus-layout {
+  padding-bottom: 90px !important;
+}
+
+/* Participant Tile Styling */
+.lk-participant-tile {
+  background-color: #303134 !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  border: 1px solid #3c4043 !important;
+}
+
+/* Hide Chat Toggles within LiveKit components if any remain */
+.lk-chat-toggle {
+  display: none !important;
+}
+
+/* Custom scrollbar for participant lists or chat */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #202124;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #5f6368;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #80868b;
+}
