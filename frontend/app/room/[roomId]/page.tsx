@@ -79,7 +79,11 @@ export default function RoomPage() {
         >
             <MeetingOverlay />
             <VideoConference />
-            <SidePanel activeTab={sidePanelTab} onClose={() => setSidePanelTab(null)} />
+            <SidePanel
+                activeTab={sidePanelTab}
+                onClose={() => setSidePanelTab(null)}
+                onTabChange={(tab) => setSidePanelTab(tab)}
+            />
             <CustomControlBar
                 onToggleChat={() => setSidePanelTab(prev => prev === 'chat' ? null : 'chat')}
                 onToggleUsers={() => setSidePanelTab(prev => prev === 'participants' ? null : 'participants')}

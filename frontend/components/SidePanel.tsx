@@ -2,7 +2,7 @@
 'use client';
 
 import { useChat, useParticipants, useRoomContext } from '@livekit/components-react';
-import { X, Send, User, MicOff, Trash2, MoreVertical, Hand, Mic } from 'lucide-react';
+import { X, Send, User, MicOff, Trash2, MoreVertical, Hand, Mic, ChevronDown, Check } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { RemoteParticipant, Track } from 'livekit-client';
@@ -10,9 +10,10 @@ import { RemoteParticipant, Track } from 'livekit-client';
 interface SidePanelProps {
     activeTab: 'chat' | 'participants' | null;
     onClose: () => void;
+    onTabChange?: (tab: 'chat' | 'participants') => void;
 }
 
-export default function SidePanel({ activeTab, onClose }: SidePanelProps) {
+export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanelProps) {
     const { chatMessages, send } = useChat();
     const participants = useParticipants();
     const [message, setMessage] = useState('');
@@ -165,20 +166,59 @@ export default function SidePanel({ activeTab, onClose }: SidePanelProps) {
                 {activeTab === 'chat' && (
                     <div className="flex flex-col gap-4">
                         {/* Recipient Selector */}
-                        <div className="flex items-center justify-between bg-zinc-800 p-2 rounded-lg text-sm">
-                            <span className="text-zinc-400">To:</span>
-                            <select
-                                className="bg-transparent text-white outline-none text-right w-full cursor-pointer"
-                                value={recipientId || ''}
-                                onChange={(e) => setRecipientId(e.target.value || null)}
-                            >
-                                <option value="" className="bg-zinc-800">Everyone</option>
-                                {participants.filter(p => !p.isLocal).map(p => (
-                                    <option key={p.identity} value={p.identity} className="bg-zinc-800">
-                                        {p.name || p.identity}
-                                    </option>
-                                ))}
-                            </select>
+                        <div className="flex items-center justify-between bg-zinc-800 p-3 rounded-xl">
+                            <span className="text-zinc-400 text-sm font-medium">To:</span>
+                            <DropdownMenu.Root>
+                                <DropdownMenu.Trigger asChild>
+                                    <button className="flex items-center gap-2 text-sm font-medium text-white hover:bg-zinc-700/50 px-3 py-1.5 rounded-lg transition-colors outline-none max-w-[200px]">
+                                        {recipientId ? (
+                                            <span className="text-blue-400 flex items-center gap-2 truncate">
+                                                <span className="truncate">{participants.find(p => p.identity === recipientId)?.name || recipientId}</span>
+                                                <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 whitespace-nowrap">Private</span>
+                                            </span>
+                                        ) : (
+                                            <span>Everyone</span>
+                                        )}
+                                        <ChevronDown size={14} className="text-zinc-500 shrink-0" />
+                                    </button>
+                                </DropdownMenu.Trigger>
+                                <DropdownMenu.Portal>
+                                    <DropdownMenu.Content className="min-w-[200px] bg-zinc-800 rounded-xl shadow-2xl border border-zinc-700 p-1.5 z-[100] animate-in fade-in zoom-in-95 duration-100" align="end" sideOffset={5}>
+                                        <DropdownMenu.Item
+                                            className="text-white text-sm flex items-center justify-between px-3 py-2 hover:bg-zinc-700 rounded-lg cursor-pointer outline-none transition-colors mb-1"
+                                            onClick={() => setRecipientId(null)}
+                                        >
+                                            Everyone
+                                            {!recipientId && <Check size={14} className="text-blue-400" />}
+                                        </DropdownMenu.Item>
+
+                                        <DropdownMenu.Label className="text-xs font-semibold text-zinc-500 px-3 py-1 uppercase tracking-wider">
+                                            Participants
+                                        </DropdownMenu.Label>
+
+                                        <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
+                                            {participants.filter(p => !p.isLocal).map(p => (
+                                                <DropdownMenu.Item
+                                                    key={p.identity}
+                                                    className="text-white text-sm flex items-center justify-between px-3 py-2 hover:bg-zinc-700 rounded-lg cursor-pointer outline-none transition-colors"
+                                                    onClick={() => setRecipientId(p.identity)}
+                                                >
+                                                    <div className="flex items-center gap-2 overflow-hidden">
+                                                        <div className="w-5 h-5 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center text-[10px] font-bold shrink-0">
+                                                            {p.name?.[0]?.toUpperCase() || '?'}
+                                                        </div>
+                                                        <span className="truncate">{p.name || p.identity}</span>
+                                                    </div>
+                                                    {recipientId === p.identity && <Check size={14} className="text-blue-400" />}
+                                                </DropdownMenu.Item>
+                                            ))}
+                                            {participants.filter(p => !p.isLocal).length === 0 && (
+                                                <div className="text-zinc-500 text-xs px-3 py-2 italic text-center">No other participants</div>
+                                            )}
+                                        </div>
+                                    </DropdownMenu.Content>
+                                </DropdownMenu.Portal>
+                            </DropdownMenu.Root>
                         </div>
 
                         {allMessages.length === 0 && (
@@ -288,13 +328,7 @@ export default function SidePanel({ activeTab, onClose }: SidePanelProps) {
                                                         className="text-white text-sm flex items-center gap-2 px-2 py-2 hover:bg-zinc-700/50 rounded cursor-pointer outline-none"
                                                         onClick={() => {
                                                             setRecipientId(p.identity);
-                                                            // Switch to chat tab? Props onClose might close sidepanel or we need to request parent to change tab.
-                                                            // We unfortunately can't switch tab from here as it's passed down.
-                                                            // BUT we are IN the side panel, so we might fail to switch tab if we are in 'Participants' modes.
-                                                            // We need a callback or just assume User opens Chat. 
-                                                            // Ideally SidePanel should control its own tab or parent should pass setTab.
-                                                            // For now, I'll setting recipientId is enough, but user stays in People tab. 
-                                                            // Let's assume the user will click 'Chat'.
+                                                            if (onTabChange) onTabChange('chat');
                                                         }}
                                                     >
                                                         <Send size={14} className="text-zinc-400" /> Send private message
