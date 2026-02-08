@@ -2,9 +2,13 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { Video, Calendar, Plus, Keyboard, Info, Link as LinkIcon } from 'lucide-react';
+import ScheduleMeeting from '@/components/ScheduleMeeting';
 
 export default function Home() {
   const [roomCode, setRoomCode] = useState('');
+  const [showSchedule, setShowSchedule] = useState(false);
 
   const [time, setTime] = useState('');
   const [date, setDate] = useState('');
@@ -49,15 +53,49 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-            <button
-              onClick={createRoom}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded flex items-center justify-center gap-2 transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              New meeting
-            </button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded flex items-center justify-center gap-2 transition-colors"
+                >
+                  <Plus size={20} />
+                  New meeting
+                </button>
+              </DropdownMenu.Trigger>
+
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="min-w-[240px] bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-100"
+                  align="start"
+                  sideOffset={8}
+                >
+                  <DropdownMenu.Item
+                    className="flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800/50 rounded-lg cursor-pointer outline-none transition-colors"
+                    onClick={() => setShowSchedule(true)}
+                  >
+                    <LinkIcon size={18} className="text-zinc-500" />
+                    Create a meeting for later
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className="flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800/50 rounded-lg cursor-pointer outline-none transition-colors"
+                    onClick={createRoom}
+                  >
+                    <Plus size={18} className="text-zinc-500" />
+                    Start an instant meeting
+                  </DropdownMenu.Item>
+                  <a
+                    href="https://calendar.google.com/calendar/render?action=TEMPLATE"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <DropdownMenu.Item className="flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800/50 rounded-lg cursor-pointer outline-none transition-colors">
+                      <Calendar size={18} className="text-zinc-500" />
+                      Schedule in Google Calendar
+                    </DropdownMenu.Item>
+                  </a>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
             <div className="flex items-center gap-2 w-full sm:w-auto relative">
               <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -103,6 +141,11 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {showSchedule && (
+        <ScheduleMeeting onClose={() => setShowSchedule(false)} />
+      )}
     </div>
   );
 }
+

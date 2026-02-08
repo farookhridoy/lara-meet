@@ -22,7 +22,7 @@ import {
     StickyNote,
     Settings
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import SettingsModal from './SettingsModal';
 import { useLocalRecording } from '@/hooks/useLocalRecording';
@@ -38,22 +38,33 @@ interface CustomControlBarProps {
 export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggleNotes, activeTab }: CustomControlBarProps) {
     const { localParticipant, isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } = useLocalParticipant();
     const [showMore, setShowMore] = useState(false);
+    const startedAt = useRef(new Date().toISOString());
 
     const [time, setTime] = useState('');
     const [isHandRaised, setIsHandRaised] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const [isRinging, setIsRinging] = useState(false);
+    const [isHost, setIsHost] = useState(false);
     const { isRecording, recordingTime, startRecording, stopRecording } = useLocalRecording();
     const { chatMessages } = useChat();
+    const [mounted, setMounted] = useState(false);
     const room = useRoomContext();
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     useEffect(() => {
         if (localParticipant.metadata) {
             try {
                 const meta = JSON.parse(localParticipant.metadata);
                 setIsHandRaised(!!meta.handRaised);
-            } catch { setIsHandRaised(false); }
+                setIsHost(!!meta.is_host);
+            } catch {
+                setIsHandRaised(false);
+                setIsHost(false);
+            }
         }
     }, [localParticipant.metadata]);
 
@@ -110,11 +121,11 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
-    const exportMeetingSummary = () => {
+    const exportMeetingSummary = async () => {
         const notes = localStorage.getItem('meeting_notes') || 'No notes taken.';
         const chat = chatMessages.map(m => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.from?.name || 'User'}: ${m.message}`).join('\n');
 
-        const summary = `
+        const summaryText = `
 MEETING SUMMARY
 Room: ${room.name}
 Date: ${new Date().toLocaleDateString()}
@@ -128,14 +139,44 @@ CHAT HISTORY:
 ${chat}
         `;
 
-        const blob = new Blob([summary], { type: 'text/plain' });
+        // 1. Download local copy
+        const blob = new Blob([summaryText], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `meeting-summary-${room.name}.txt`;
         a.click();
 
-        // Cleanup as requested
+        // 2. Send to Backend
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+            await fetch(`${apiUrl}/summary`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    room_id: room.name,
+                    summary: summaryText,
+                    started_at: startedAt.current,
+                    finished_at: new Date().toISOString(),
+                })
+            });
+        } catch (error) {
+            console.error('Failed to save summary to backend:', error);
+        }
+
+        // 3. Cleanup Attachments from Server (Self-destruct)
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+            await fetch(`${apiUrl}/cleanup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ room_id: room.name })
+            });
+        } catch (error) {
+            console.error('Failed to cleanup room files:', error);
+        }
+
+        // Cleanup
         localStorage.removeItem('meeting_notes');
     };
 
@@ -144,6 +185,8 @@ ${chat}
     const buttonActive = "bg-zinc-700/80 hover:bg-zinc-600 border border-zinc-600";
     const buttonInactive = "bg-red-500/90 hover:bg-red-600 text-white border-none shadow-red-500/20 shadow-lg";
     const buttonSpecial = "bg-blue-300 text-blue-900 hover:bg-blue-200";
+
+    if (!mounted) return null;
 
     return (
         <div className="fixed bottom-0 left-0 right-0 h-[80px] bg-zinc-900 border-t border-zinc-800 flex items-center justify-between px-6 z-[100]">
@@ -261,16 +304,71 @@ ${chat}
                     </DropdownMenu.Portal>
                 </DropdownMenu.Root>
 
-                {/* End Call */}
-                <DisconnectButton
-                    onClick={() => {
-                        exportMeetingSummary();
-                    }}
-                >
-                    <div className="bg-red-600 hover:bg-red-700 text-white rounded-full w-16 h-10 flex items-center justify-center ml-2 transition-colors shadow-lg">
-                        <PhoneOff size={20} fill="currentColor" />
-                    </div>
-                </DisconnectButton>
+                {/* End Call / Host Controls */}
+                {isHost ? (
+                    <DropdownMenu.Root>
+                        <DropdownMenu.Trigger asChild>
+                            <div className="bg-red-600 hover:bg-red-700 text-white rounded-full w-20 h-10 flex items-center justify-center ml-2 transition-colors shadow-lg cursor-pointer gap-1 px-3">
+                                <PhoneOff size={18} fill="currentColor" />
+                                <ChevronDown size={14} />
+                            </div>
+                        </DropdownMenu.Trigger>
+
+                        <DropdownMenu.Portal>
+                            <DropdownMenu.Content
+                                className="bg-zinc-800 rounded-xl shadow-2xl p-2 min-w-[180px] border border-zinc-700 animate-in slide-in-from-bottom-2 duration-200 mb-4 z-[200]"
+                                sideOffset={10}
+                                align="end"
+                            >
+                                <DropdownMenu.Item
+                                    className="flex items-center gap-3 p-3 hover:bg-zinc-700 rounded-lg text-white text-sm cursor-pointer outline-none transition-colors"
+                                    onClick={async () => {
+                                        await exportMeetingSummary();
+                                        room.disconnect();
+                                        window.location.href = '/';
+                                    }}
+                                >
+                                    <div className="bg-zinc-700 p-1.5 rounded-full">
+                                        <X size={14} />
+                                    </div>
+                                    Leave meeting
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                    className="flex items-center gap-3 p-3 hover:bg-red-500/10 text-red-500 rounded-lg text-sm cursor-pointer outline-none transition-colors"
+                                    onClick={async () => {
+                                        if (window.confirm("End meeting for everyone?")) {
+                                            const encoder = new TextEncoder();
+                                            await localParticipant.publishData(encoder.encode(JSON.stringify({ action: 'end' })), {
+                                                reliable: true,
+                                                topic: 'end_session'
+                                            });
+                                            await exportMeetingSummary();
+                                            room.disconnect();
+                                            window.location.href = '/';
+                                        }
+                                    }}
+                                >
+                                    <div className="bg-red-500 p-1.5 rounded-full text-white">
+                                        <PhoneOff size={14} fill="currentColor" />
+                                    </div>
+                                    End meeting for all
+                                </DropdownMenu.Item>
+                            </DropdownMenu.Content>
+                        </DropdownMenu.Portal>
+                    </DropdownMenu.Root>
+                ) : (
+                    <DisconnectButton
+                        onClick={async () => {
+                            await exportMeetingSummary();
+                            room.disconnect();
+                            window.location.href = '/';
+                        }}
+                    >
+                        <div className="bg-red-600 hover:bg-red-700 text-white rounded-full w-16 h-10 flex items-center justify-center ml-2 transition-colors shadow-lg">
+                            <PhoneOff size={20} fill="currentColor" />
+                        </div>
+                    </DisconnectButton>
+                )}
 
             </div>
 

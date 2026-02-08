@@ -22,7 +22,14 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
     const [notes, setNotes] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const [mounted, setMounted] = useState(false);
     const room = useRoomContext();
+
+    useEffect(() => {
+        setMounted(true);
+        const savedNotes = localStorage.getItem('meeting_notes');
+        if (savedNotes) setNotes(savedNotes);
+    }, []);
 
     // Scroll to bottom of chat
     useEffect(() => {
@@ -71,9 +78,11 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
         setIsUploading(true);
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('room_id', room.name);
 
         try {
-            const resp = await fetch('/api/upload', {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+            const resp = await fetch(`${apiUrl}/upload`, {
                 method: 'POST',
                 body: formData,
             });
@@ -137,6 +146,8 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
         room.on('dataReceived', handleData);
         return () => { room.off('dataReceived', handleData); };
     }, [room]);
+
+    if (!mounted) return null;
 
     // Derived messages
     const allMessages = [...chatMessages, ...privateMessages].sort((a, b) => a.timestamp - b.timestamp);

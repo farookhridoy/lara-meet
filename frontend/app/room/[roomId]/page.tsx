@@ -16,11 +16,20 @@ export default function RoomPage() {
     const [username, setUsername] = useState<string>('');
     const [isPreJoin, setIsPreJoin] = useState(true);
     const [sidePanelTab, setSidePanelTab] = useState<'chat' | 'participants' | 'notes' | null>(null);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!mounted) return null;
 
     const joinRoom = async () => {
         if (!username) return;
         try {
-            const resp = await fetch(`/api/token?room=${roomId}&username=${username}`);
+            const isHost = new URLSearchParams(window.location.search).get('host') === 'true';
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+            const resp = await fetch(`${apiUrl}/get-token?room=${roomId}&username=${username}&is_host=${isHost}`);
             const data = await resp.json();
             setToken(data.token);
             setIsPreJoin(false);
@@ -102,11 +111,15 @@ function RoomEventsHandler() {
         const handleData = (payload: Uint8Array, participant: any, kind: any, topic?: string) => {
             if (topic === 'ask_unmute') {
                 // Simple alert for now, or use a toast library if added
-                // Decoded: JSON.parse(new TextDecoder().decode(payload))
                 const confirmUnmute = window.confirm("The host has asked you to unmute your microphone. Unmute now?");
                 if (confirmUnmute) {
                     room.localParticipant.setMicrophoneEnabled(true);
                 }
+            }
+
+            if (topic === 'end_session') {
+                room.disconnect();
+                window.location.href = '/';
             }
         };
 
