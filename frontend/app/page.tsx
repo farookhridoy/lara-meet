@@ -36,7 +36,7 @@ export default function Home() {
           <svg className="h-8 w-8 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" />
           </svg>
-          <span className="text-xl font-medium text-gray-300">Google Meet Clone</span>
+          <span className="text-xl font-medium text-gray-300">LaraMeet</span>
         </div>
         <div className="text-gray-400 text-sm">
           <span>{time} • {date}</span>

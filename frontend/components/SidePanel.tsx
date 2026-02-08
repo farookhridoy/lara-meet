@@ -469,7 +469,7 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                 {activeTab === 'notes' && (
                     <div className="flex flex-col h-full gap-4">
                         <textarea
-                            value={notes}
+                            value={notes || ''}
                             onChange={(e) => { setNotes(e.target.value); localStorage.setItem('meeting_notes', e.target.value); }}
                             placeholder="Start typing your notes here..."
                             className="flex-1 bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4 text-sm text-zinc-200 focus:outline-none resize-none min-h-[300px]"
@@ -498,7 +498,7 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                         <div className="relative flex-1">
                             <input
                                 type="text"
-                                value={message}
+                                value={message || ''}
                                 onChange={(e) => setMessage(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && onSend()}
                                 placeholder={isUploading ? "Uploading file..." : "Send a message"}

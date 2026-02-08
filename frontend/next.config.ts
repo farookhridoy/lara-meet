@@ -3,9 +3,7 @@ import type { NextConfig } from "next";
 // @ts-ignore
 const nextConfig: any = {
   reactStrictMode: false,
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  output: 'standalone',
   typescript: {
     ignoreBuildErrors: true,
   },
