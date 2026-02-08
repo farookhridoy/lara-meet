@@ -1,14 +1,13 @@
 
 'use client';
-import { LiveKitRoom, VideoConference } from '@livekit/components-react';
+import { LiveKitRoom, VideoConference, useRoomContext, useLocalParticipant } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import MeetingOverlay from '@/components/MeetingOverlay';
 import CustomControlBar from '@/components/CustomControlBar';
 import SidePanel from '@/components/SidePanel';
-import { useRoomContext } from '@livekit/components-react';
-import { RoomEvent, DataPacket_Kind } from 'livekit-client';
+import { RoomEvent } from 'livekit-client';
 
 export default function RoomPage() {
     const { roomId } = useParams();
@@ -17,6 +16,8 @@ export default function RoomPage() {
     const [isPreJoin, setIsPreJoin] = useState(true);
     const [sidePanelTab, setSidePanelTab] = useState<'chat' | 'participants' | 'notes' | null>(null);
     const [mounted, setMounted] = useState(false);
+    const [isWaiting, setIsWaiting] = useState(false);
+    const [waitingMessage, setWaitingMessage] = useState('Waiting for host to let you in...');
 
     useEffect(() => {
         setMounted(true);
@@ -31,8 +32,19 @@ export default function RoomPage() {
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
             const resp = await fetch(`${apiUrl}/get-token?room=${roomId}&username=${username}&is_host=${isHost}`);
             const data = await resp.json();
-            setToken(data.token);
-            setIsPreJoin(false);
+
+            if (!isHost) {
+                // Guests enter waiting state
+                setIsWaiting(true);
+                // We don't setToken yet to prevent LiveKit connection
+                // Instead we set up a temporary listener or use a separate mechanism
+                // For simplicity in this demo, we'll connect but stay in a 'Lobby' UI
+                setToken(data.token);
+                setIsPreJoin(false);
+            } else {
+                setToken(data.token);
+                setIsPreJoin(false);
+            }
         } catch (e) {
             console.error(e);
         }
@@ -79,8 +91,8 @@ export default function RoomPage() {
 
     return (
         <LiveKitRoom
-            video={true}
-            audio={true}
+            video={!isWaiting}
+            audio={!isWaiting}
             token={token}
             serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
             data-lk-theme="default"
@@ -99,27 +111,113 @@ export default function RoomPage() {
                 onToggleNotes={() => setSidePanelTab(prev => prev === 'notes' ? null : 'notes')}
                 activeTab={sidePanelTab}
             />
-            <RoomEventsHandler />
+            {isWaiting && (
+                <WaitingLobby
+                    message={waitingMessage}
+                    onCancel={() => window.location.href = '/'}
+                />
+            )}
+            <RoomEventsHandler isWaiting={isWaiting} setIsWaiting={setIsWaiting} setWaitingMessage={setWaitingMessage} />
         </LiveKitRoom>
     );
 }
 
-function RoomEventsHandler() {
+function WaitingLobby({ message, onCancel }: { message: string, onCancel: () => void }) {
+    return (
+        <div className="fixed inset-0 z-[1000] bg-zinc-950 flex items-center justify-center p-6">
+            <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center space-y-6 shadow-2xl animate-in fade-in zoom-in duration-300">
+                <div className="flex justify-center">
+                    <div className="w-16 h-16 bg-blue-600/20 rounded-full flex items-center justify-center animate-pulse">
+                        <div className="w-8 h-8 bg-blue-600 rounded-full" />
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <h3 className="text-2xl font-medium text-white">Hold on...</h3>
+                    <p className="text-zinc-400 leading-relaxed">
+                        {message}
+                    </p>
+                </div>
+                <div className="pt-4">
+                    <button
+                        onClick={onCancel}
+                        className="px-6 py-2 text-zinc-500 hover:text-white transition-colors text-sm font-medium"
+                    >
+                        Cancel request
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function RoomEventsHandler({ isWaiting, setIsWaiting, setWaitingMessage }: { isWaiting: boolean, setIsWaiting: (v: boolean) => void, setWaitingMessage: (v: string) => void }) {
     const room = useRoomContext();
+    const { localParticipant } = useLocalParticipant();
+
+    useEffect(() => {
+        const sendJoinRequest = async () => {
+            if (room.state !== 'connected' || !isWaiting) return;
+
+            try {
+                const encoder = new TextEncoder();
+                await localParticipant.publishData(
+                    encoder.encode(JSON.stringify({ action: 'request_join', name: localParticipant.name })),
+                    { reliable: true, topic: 'join_request' }
+                );
+            } catch (err) {
+                console.error("Failed to send join request:", err);
+            }
+        };
+
+        // If we are waiting, we need to send the request
+        // But we must wait for the room to be connected
+        if (room.state === 'connected' && isWaiting) {
+            sendJoinRequest();
+            // Also set local metadata to indicate waiting state to others
+            const currentMeta = localParticipant.metadata ? JSON.parse(localParticipant.metadata) : {};
+            localParticipant.setMetadata(JSON.stringify({ ...currentMeta, is_waiting: true }));
+        } else if (isWaiting) {
+            const onStateChange = (state: any) => {
+                if (state === 'connected') {
+                    sendJoinRequest();
+                    // Also set local metadata to indicate waiting state to others
+                    const currentMeta = localParticipant.metadata ? JSON.parse(localParticipant.metadata) : {};
+                    localParticipant.setMetadata(JSON.stringify({ ...currentMeta, is_waiting: true }));
+                    room.off('connectionStateChanged', onStateChange);
+                }
+            };
+            room.on('connectionStateChanged', onStateChange);
+            return () => {
+                room.off('connectionStateChanged', onStateChange);
+            };
+        }
+    }, [room, localParticipant, isWaiting]);
 
     useEffect(() => {
         const handleData = (payload: Uint8Array, participant: any, kind: any, topic?: string) => {
-            if (topic === 'ask_unmute') {
-                // Simple alert for now, or use a toast library if added
-                const confirmUnmute = window.confirm("The host has asked you to unmute your microphone. Unmute now?");
-                if (confirmUnmute) {
-                    room.localParticipant.setMicrophoneEnabled(true);
-                }
-            }
-
             if (topic === 'end_session') {
                 room.disconnect();
                 window.location.href = '/';
+            }
+
+            if (topic === 'cohost_action') {
+                const data = JSON.parse(new TextDecoder().decode(payload));
+                const currentMeta = room.localParticipant.metadata ? JSON.parse(room.localParticipant.metadata) : {};
+                const newMeta = { ...currentMeta, is_cohost: data.action === 'promote' };
+                room.localParticipant.setMetadata(JSON.stringify(newMeta));
+            }
+
+            if (topic === 'join_response') {
+                const data = JSON.parse(new TextDecoder().decode(payload));
+                if (data.status === 'accepted') {
+                    setIsWaiting(false);
+                    // Clear waiting metadata
+                    const currentMeta = room.localParticipant.metadata ? JSON.parse(room.localParticipant.metadata) : {};
+                    const { is_waiting, ...rest } = currentMeta;
+                    room.localParticipant.setMetadata(JSON.stringify(rest));
+                } else if (data.status === 'hold') {
+                    setWaitingMessage(data.message || "The host has put you on hold. Please be patient...");
+                }
             }
         };
 

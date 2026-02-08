@@ -26,7 +26,7 @@ export default function Home() {
 
   const createRoom = () => {
     const randomId = Math.random().toString(36).substring(7);
-    window.location.href = `/room/${randomId}`;
+    window.location.href = `/room/${randomId}?host=true`;
   };
 
   return (

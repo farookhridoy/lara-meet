@@ -20,7 +20,13 @@ import {
     LayoutGrid,
     Maximize,
     StickyNote,
-    Settings
+    Settings,
+    ChevronDown,
+    X,
+    Info,
+    Copy,
+    CheckCircle,
+    Shield
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -46,6 +52,8 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
     const [unreadCount, setUnreadCount] = useState(0);
     const [isRinging, setIsRinging] = useState(false);
     const [isHost, setIsHost] = useState(false);
+    const [isCoHost, setIsCoHost] = useState(false);
+    const [screenShareLocked, setScreenShareLocked] = useState(false);
     const { isRecording, recordingTime, startRecording, stopRecording } = useLocalRecording();
     const { chatMessages } = useChat();
     const [mounted, setMounted] = useState(false);
@@ -61,12 +69,41 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
                 const meta = JSON.parse(localParticipant.metadata);
                 setIsHandRaised(!!meta.handRaised);
                 setIsHost(!!meta.is_host);
+                setIsCoHost(!!meta.is_cohost);
             } catch {
                 setIsHandRaised(false);
                 setIsHost(false);
+                setIsCoHost(false);
             }
         }
     }, [localParticipant.metadata]);
+
+    useEffect(() => {
+        const handleRoomMetadata = (meta?: string) => {
+            if (meta) {
+                try {
+                    const data = JSON.parse(meta);
+                    setScreenShareLocked(!!data.screenShareLocked);
+                } catch { }
+            }
+        };
+        handleRoomMetadata(room.metadata);
+        room.on(RoomEvent.RoomMetadataChanged, handleRoomMetadata);
+        return () => { room.off(RoomEvent.RoomMetadataChanged, handleRoomMetadata); };
+    }, [room]);
+
+    const isLocalAdmin = isHost || isCoHost;
+
+    const toggleScreenShareLock = async () => {
+        if (!isLocalAdmin) return;
+        const newState = !screenShareLocked;
+        const encoder = new TextEncoder();
+        await localParticipant.publishData(encoder.encode(JSON.stringify({ locked: newState })), {
+            reliable: true,
+            topic: 'screen_share_lock'
+        });
+        setScreenShareLocked(newState);
+    };
 
     const toggleHandRaise = async () => {
         const currentMeta = localParticipant.metadata ? JSON.parse(localParticipant.metadata) : {};
@@ -196,11 +233,47 @@ ${chat}
                 <span className="font-medium text-sm text-zinc-300">
                     {time}
                 </span>
-                <span className="border-l border-zinc-700 h-4 mx-2"></span>
-                <span className="text-sm font-medium text-zinc-400 truncate max-w-[150px]">
-                    {/* Room Name can be fetched if needed */}
-                    Meeting
-                </span>
+                <span className="border-l border-zinc-700 h-4"></span>
+                <DropdownMenu.Root>
+                    <DropdownMenu.Trigger asChild>
+                        <button className="flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors outline-none group">
+                            <Info size={18} className="text-zinc-500 group-hover:text-blue-400 transition-colors" />
+                            <span>Meeting details</span>
+                        </button>
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Portal>
+                        <DropdownMenu.Content className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 min-w-[320px] animate-in slide-in-from-bottom-2 duration-200 z-[200] mb-4" sideOffset={12} align="start">
+                            <div className="space-y-4">
+                                <div>
+                                    <h4 className="text-white font-medium mb-1">Joining info</h4>
+                                    <p className="text-zinc-400 text-xs">Share this link with people you want in the meeting</p>
+                                </div>
+
+                                <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 flex items-center justify-between gap-3 group/link hover:border-blue-500/30 transition-colors">
+                                    <span className="text-sm text-zinc-300 truncate">
+                                        {typeof window !== 'undefined' ? window.location.origin + '/room/' + room.name : room.name}
+                                    </span>
+                                    <button
+                                        onClick={() => {
+                                            const url = window.location.origin + '/room/' + room.name;
+                                            navigator.clipboard.writeText(url);
+                                            alert("Link copied to clipboard!");
+                                        }}
+                                        className="p-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all"
+                                        title="Copy link"
+                                    >
+                                        <Copy size={16} />
+                                    </button>
+                                </div>
+
+                                <div className="text-[10px] text-zinc-500 flex items-center gap-2 bg-zinc-800/30 p-2 rounded-lg">
+                                    <Shield size={10} className="text-zinc-600" />
+                                    <span>Only people invited by the host can join directly. Still waiting room is active.</span>
+                                </div>
+                            </div>
+                        </DropdownMenu.Content>
+                    </DropdownMenu.Portal>
+                </DropdownMenu.Root>
             </div>
 
             {/* Center: Main Controls */}
@@ -251,14 +324,21 @@ ${chat}
                 </button>
 
                 {/* Screen Share */}
-                <TrackToggle
-                    source={Track.Source.ScreenShare}
-                    showIcon={false}
-                    className={`${buttonBase} ${isScreenShareEnabled ? buttonSpecial : buttonActive}`}
-                    title="Present now"
-                >
-                    {isScreenShareEnabled ? <MonitorOff size={20} /> : <Monitor size={20} />}
-                </TrackToggle>
+                <span onClick={(e) => {
+                    if (screenShareLocked && !isLocalAdmin) {
+                        e.stopPropagation();
+                        alert("Screen sharing is currently restricted to hosts.");
+                    }
+                }}>
+                    <TrackToggle
+                        source={Track.Source.ScreenShare}
+                        showIcon={false}
+                        className={`${buttonBase} ${isScreenShareEnabled ? buttonSpecial : (screenShareLocked && !isLocalAdmin ? 'bg-zinc-800 opacity-50 cursor-not-allowed' : buttonActive)}`}
+                        disabled={screenShareLocked && !isLocalAdmin}
+                    >
+                        {isScreenShareEnabled ? <MonitorOff size={20} /> : <Monitor size={20} />}
+                    </TrackToggle>
+                </span>
 
                 {/* More Options */}
                 {/* More Options Dropdown */}
@@ -300,6 +380,27 @@ ${chat}
                                 <Settings size={18} />
                                 Settings
                             </DropdownMenu.Item>
+
+                            {isLocalAdmin && (
+                                <>
+                                    <DropdownMenu.Separator className="h-px bg-zinc-700 my-1" />
+                                    <DropdownMenu.Item
+                                        className="flex items-center justify-between p-3 hover:bg-zinc-700 rounded-lg text-white text-sm cursor-pointer outline-none transition-colors"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            toggleScreenShareLock();
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Monitor size={18} className={screenShareLocked ? 'text-red-400' : 'text-zinc-400'} />
+                                            <span>Screen share {screenShareLocked ? 'locked' : 'unlocked'}</span>
+                                        </div>
+                                        <div className={`w-8 h-4 rounded-full transition-colors relative ${screenShareLocked ? 'bg-red-500' : 'bg-zinc-600'}`}>
+                                            <div className={`absolute top-1 w-2 h-2 rounded-full bg-white transition-all ${screenShareLocked ? 'right-1' : 'left-1'}`} />
+                                        </div>
+                                    </DropdownMenu.Item>
+                                </>
+                            )}
                         </DropdownMenu.Content>
                     </DropdownMenu.Portal>
                 </DropdownMenu.Root>
