@@ -128,6 +128,19 @@ export default function CustomControlBar({ onToggleChat, onToggleUsers, onToggle
         const newHandState = !currentMeta.handRaised;
         await localParticipant.setMetadata(JSON.stringify({ ...currentMeta, handRaised: newHandState }));
         setIsHandRaised(newHandState);
+
+        // Notify chat
+        if (newHandState) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(JSON.stringify({
+                message: `${localParticipant.name || 'someone'} raised their hand ✋`,
+                timestamp: Date.now(),
+            }));
+            await localParticipant.publishData(data, {
+                reliable: true,
+                topic: 'chat'
+            });
+        }
     };
 
     useEffect(() => {

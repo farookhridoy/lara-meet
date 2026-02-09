@@ -7,6 +7,7 @@ import MeetingOverlay from '@/components/MeetingOverlay';
 import CustomControlBar from '@/components/CustomControlBar';
 import SidePanel from '@/components/SidePanel';
 import { RoomEvent } from 'livekit-client';
+import { Hand, Shield, ShieldCheck, MicOff, Send, MoreVertical, Mic, Trash2 } from 'lucide-react';
 
 export default function RoomPage() {
     const [roomId, setRoomId] = useState<string>('');

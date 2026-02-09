@@ -399,6 +399,7 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                                             <span className="text-sm text-white truncate font-medium">
                                                 {p.name || p.identity} {p.isLocal && '(You)'}
                                             </span>
+                                            {pMeta.handRaised && <Hand size={12} className="text-blue-400 fill-blue-400/20 shrink-0 animate-bounce" />}
                                             {isPHost && <Shield size={12} className="text-blue-400 fill-blue-400/20 shrink-0" />}
                                             {isPCoHost && <ShieldCheck size={12} className="text-zinc-400 fill-zinc-400/20 shrink-0" />}
                                             {!p.isMicrophoneEnabled && <MicOff size={12} className="text-red-500 shrink-0" />}
