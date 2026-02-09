@@ -49,7 +49,7 @@ export default function Home() {
             Premium video meetings. Now free for everyone.
           </h1>
           <p className="text-lg text-gray-400">
-            We re-engineered the service we built for secure business meetings, Google Meet, to make it free and available for all.
+            We re-engineered the service we built for secure business meetings, LaraMeet, to make it free and available for all.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
@@ -123,7 +123,7 @@ export default function Home() {
 
           <div className="pt-8 border-t border-gray-800 w-full">
             <p className="text-gray-500 text-sm">
-              <a href="#" className="underline hover:text-gray-300">Learn more</a> about Google Meet
+              <a href="#" className="underline hover:text-gray-300">Learn more</a> about LaraMeet
             </p>
           </div>
         </div>
