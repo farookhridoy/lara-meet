@@ -2,7 +2,11 @@
   RewriteEngine On
   RewriteBase /
   
-  # Redirect /room/abc to /room/abc.html if it exists
+  # Redirect /room/abc to room.html (which will be room.html in static export)
+  RewriteCond %{REQUEST_URI} ^/room/ [NC]
+  RewriteRule ^room/.*$ /room.html [L]
+
+  # Redirect /something to /something.html if it exists
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteCond %{REQUEST_FILENAME}.html -f

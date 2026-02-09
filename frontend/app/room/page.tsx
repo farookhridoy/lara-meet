@@ -3,14 +3,13 @@
 import { LiveKitRoom, VideoConference, useRoomContext, useLocalParticipant } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
 import MeetingOverlay from '@/components/MeetingOverlay';
 import CustomControlBar from '@/components/CustomControlBar';
 import SidePanel from '@/components/SidePanel';
 import { RoomEvent } from 'livekit-client';
 
 export default function RoomPage() {
-    const { roomId } = useParams();
+    const [roomId, setRoomId] = useState<string>('');
     const [token, setToken] = useState<string>('');
     const [username, setUsername] = useState<string>('');
     const [isPreJoin, setIsPreJoin] = useState(true);
@@ -20,6 +19,9 @@ export default function RoomPage() {
     const [waitingMessage, setWaitingMessage] = useState('Waiting for host to let you in...');
 
     useEffect(() => {
+        const path = window.location.pathname;
+        const id = path.split('/').pop() || '';
+        setRoomId(id);
         setMounted(true);
     }, []);
 
