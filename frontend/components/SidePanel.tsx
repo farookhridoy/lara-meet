@@ -189,7 +189,8 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
                 }
             }
 
-            await fetch('/api/host-action', {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+            await fetch(`${apiUrl}/host-action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

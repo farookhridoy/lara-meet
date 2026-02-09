@@ -11,6 +11,7 @@ Route::post('/summary', [MeetingController::class, 'storeSummary']);
 Route::post('/schedule', [MeetingController::class, 'schedule']);
 Route::post('/cleanup', [MeetingController::class, 'cleanupRoom']);
 Route::get('/meetings', [MeetingController::class, 'listMeetings']);
+Route::post('/host-action', [MeetingController::class, 'handleHostAction']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();

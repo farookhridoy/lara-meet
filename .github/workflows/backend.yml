@@ -1,0 +1,47 @@
+name: Deploy Backend to Hostinger
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'backend/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, ctype, iconv, mysql, zip
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-dev --optimize-autoloader
+        working-directory: backend
+
+      - name: 📂 Deploy via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          password: ${{ secrets.HOSTINGER_PASSWORD }}
+          port: ${{ secrets.HOSTINGER_PORT }}
+          source: "backend/"
+          target: "domains/apimeet.thelarasoft.com/public_html"
+          strip_components: 1
+          rm: false
+          exclude: |
+            **/node_modules/**
+            **/tests/**
+            .env
+            .git*
+            storage/framework/cache/data/*
+            storage/framework/sessions/*
+            storage/framework/views/*
+            storage/logs/*

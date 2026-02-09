@@ -10,6 +10,7 @@ use App\Models\Attachment;
 use Agence104\LiveKit\AccessToken;
 use Agence104\LiveKit\AccessTokenOptions;
 use Agence104\LiveKit\VideoGrant;
+use Agence104\LiveKit\RoomServiceClient;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -147,5 +148,45 @@ class MeetingController extends Controller
     public function listMeetings()
     {
         return response()->json(Meeting::latest()->get());
+    }
+
+    public function handleHostAction(Request $request)
+    {
+        $request->validate([
+            'room' => 'required|string',
+            'identity' => 'required|string',
+            'action' => 'required|string',
+            'trackSid' => 'nullable|string',
+        ]);
+
+        $room = $request->room;
+        $identity = $request->identity;
+        $action = $request->action;
+        $trackSid = $request->trackSid;
+
+        $host = env('LIVEKIT_URL');
+        $apiKey = env('LIVEKIT_API_KEY');
+        $apiSecret = env('LIVEKIT_API_SECRET');
+
+        $roomService = new RoomServiceClient($host, $apiKey, $apiSecret);
+
+        try {
+            switch ($action) {
+                case 'mute':
+                    if (!$trackSid) {
+                        return response()->json(['error' => 'Missing trackSid for mute action'], 400);
+                    }
+                    $roomService->mutePublishedTrack($room, $identity, $trackSid, true);
+                    break;
+                case 'remove':
+                    $roomService->removeParticipant($room, $identity);
+                    break;
+                default:
+                    return response()->json(['error' => 'Invalid action'], 400);
+            }
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Action failed: ' . $e->getMessage()], 500);
+        }
     }
 }
