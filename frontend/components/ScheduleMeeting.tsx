@@ -25,11 +25,15 @@ export default function ScheduleMeeting({ onClose }: ScheduleMeetingProps) {
         setIsScheduling(true);
         try {
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+            const formattedApiUrl = apiUrl.startsWith('http') ? apiUrl : `https://${apiUrl}`;
             const scheduledAt = `${date} ${time}`;
 
-            const resp = await fetch(`${apiUrl}/schedule`, {
+            const resp = await fetch(`${formattedApiUrl}/schedule`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({
                     title,
                     scheduled_at: scheduledAt

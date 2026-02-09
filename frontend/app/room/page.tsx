@@ -20,7 +20,8 @@ export default function RoomPage() {
 
     useEffect(() => {
         const path = window.location.pathname;
-        const id = path.split('/').pop() || '';
+        const parts = path.split('/').filter(Boolean);
+        const id = parts[parts.length - 1] || '';
         setRoomId(id);
         setMounted(true);
     }, []);
@@ -32,7 +33,10 @@ export default function RoomPage() {
         try {
             const isHost = new URLSearchParams(window.location.search).get('host') === 'true';
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-            const resp = await fetch(`${apiUrl}/get-token?room=${roomId}&username=${username}&is_host=${isHost}`);
+            const formattedApiUrl = apiUrl.startsWith('http') ? apiUrl : `https://${apiUrl}`;
+            const resp = await fetch(`${formattedApiUrl}/get-token?room=${roomId}&username=${username}&is_host=${isHost}`, {
+                headers: { 'Accept': 'application/json' }
+            });
             const data = await resp.json();
 
             if (!isHost) {

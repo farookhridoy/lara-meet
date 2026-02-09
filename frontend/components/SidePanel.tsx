@@ -150,8 +150,10 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
 
         try {
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-            const resp = await fetch(`${apiUrl}/upload`, {
+            const formattedApiUrl = apiUrl.startsWith('http') ? apiUrl : `https://${apiUrl}`;
+            const resp = await fetch(`${formattedApiUrl}/upload`, {
                 method: 'POST',
+                headers: { 'Accept': 'application/json' },
                 body: formData,
             });
             const data = await resp.json();
@@ -190,9 +192,13 @@ export default function SidePanel({ activeTab, onClose, onTabChange }: SidePanel
             }
 
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-            await fetch(`${apiUrl}/host-action`, {
+            const formattedApiUrl = apiUrl.startsWith('http') ? apiUrl : `https://${apiUrl}`;
+            await fetch(`${formattedApiUrl}/host-action`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({
                     room: room.name,
                     identity,
