@@ -111,12 +111,12 @@ export default function Home() {
                 onKeyDown={(e) => e.key === 'Enter' && roomCode && (window.location.href = `/room/${roomCode}`)}
               />
               {roomCode && (
-                <Link
+                <a
                   href={`/room/${roomCode}`}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-300 font-medium"
                 >
                   Join
-                </Link>
+                </a>
               )}
             </div>
           </div>

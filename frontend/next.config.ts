@@ -4,6 +4,10 @@ import type { NextConfig } from "next";
 const nextConfig: any = {
   reactStrictMode: false,
   output: 'export',
+  images: {
+    unoptimized: true,
+  },
+  trailingSlash: true,
   typescript: {
     ignoreBuildErrors: true,
   },
